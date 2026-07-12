@@ -1,0 +1,10 @@
+# Configuração do Prometheus para coletar as métricas da API.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "stock-lstm-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]

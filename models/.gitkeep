@@ -1,0 +1,2 @@
+# Os artefatos do modelo (lstm_model.keras, scaler.pkl, metadata.json) são
+# gerados por `python scripts/train.py` e ficam neste diretório.

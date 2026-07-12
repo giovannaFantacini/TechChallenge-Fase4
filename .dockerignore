@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.git/
+.gitignore
+.pytest_cache/
+.ipynb_checkpoints/
+notebooks/
+tests/
+*.mov
+*.mp4
+.env
+.DS_Store

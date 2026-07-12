@@ -1,0 +1,25 @@
+# Sobe a API + Prometheus para monitoramento local.
+#   docker compose up --build
+services:
+  api:
+    build: .
+    container_name: stock-lstm-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persiste os artefatos treinados fora do contêiner
+      - ./models:/app/models
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: stock-lstm-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api
+    restart: unless-stopped

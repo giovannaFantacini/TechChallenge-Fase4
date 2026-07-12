@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Artefatos de modelo (gerados pelo treino)
+models/*.keras
+models/*.pkl
+models/*.h5
+models/metadata.json
+
+# Ambiente
+.env
+
+# Sistema operacional / IDE
+.DS_Store
+.vscode/
+.idea/

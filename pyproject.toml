@@ -1,0 +1,13 @@
+[project]
+name = "techchallenge-fase4"
+version = "1.0.0"
+description = "Previsão de preços de ações com LSTM + API RESTful (Tech Challenge Fase 4)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools]
+packages = ["src"]
