@@ -1,4 +1,4 @@
-"""Pipeline de treino ponta a ponta.
+"""Pipeline de treino ponta a ponta (um modelo por ticker).
 
 Orquestra as etapas 1 a 3 do Tech Challenge:
   coleta -> pré-processamento -> treino -> avaliação -> salvamento.
@@ -11,10 +11,9 @@ import logging
 from datetime import datetime, timezone
 
 import joblib
-import numpy as np
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-from src.config import MODELS_DIR, Settings, settings
+from src.config import Settings, settings
 from src.data.collector import download_data, prepare_datasets
 from src.model.evaluate import compute_metrics
 from src.model.lstm_model import build_model
@@ -22,15 +21,17 @@ from src.model.lstm_model import build_model
 logger = logging.getLogger(__name__)
 
 
-def train_pipeline(cfg: Settings = settings) -> dict:
-    """Executa o pipeline completo e salva os artefatos em ``models/``.
+def train_symbol(symbol: str, cfg: Settings = settings) -> dict:
+    """Treina, avalia e salva o modelo de **um** ticker em ``models/<TICKER>/``.
 
-    Retorna um dicionário com as métricas de teste e o histórico resumido.
+    Retorna um dicionário com as métricas de teste e os metadados salvos.
     """
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    symbol = symbol.upper()
+    out_dir = cfg.symbol_dir(symbol)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Coleta ------------------------------------------------------------
-    df = download_data(cfg.symbol, cfg.start_date, cfg.end_date)
+    df = download_data(symbol, cfg.start_date, cfg.end_date)
 
     # 2. Pré-processamento -------------------------------------------------
     data = prepare_datasets(
@@ -62,7 +63,7 @@ def train_pipeline(cfg: Settings = settings) -> dict:
         ),
     ]
 
-    logger.info("Iniciando treino...")
+    logger.info("[%s] Iniciando treino...", symbol)
     history = model.fit(
         data["X_train"],
         data["y_train"],
@@ -76,19 +77,17 @@ def train_pipeline(cfg: Settings = settings) -> dict:
     # 4. Avaliação (em escala real de preço) -------------------------------
     y_pred_scaled = model.predict(data["X_test"], verbose=0)
     y_pred = scaler.inverse_transform(y_pred_scaled).ravel()
-    y_true = scaler.inverse_transform(
-        data["y_test"].reshape(-1, 1)
-    ).ravel()
+    y_true = scaler.inverse_transform(data["y_test"].reshape(-1, 1)).ravel()
 
     metrics = compute_metrics(y_true, y_pred)
-    logger.info("Métricas de teste: %s", metrics)
+    logger.info("[%s] Métricas de teste: %s", symbol, metrics)
 
     # 5. Salvamento --------------------------------------------------------
-    model.save(cfg.model_path)
-    joblib.dump(scaler, cfg.scaler_path)
+    model.save(cfg.model_path(symbol))
+    joblib.dump(scaler, cfg.scaler_path(symbol))
 
     metadata = {
-        "symbol": cfg.symbol,
+        "symbol": symbol,
         "start_date": cfg.start_date,
         "end_date": cfg.end_date,
         "target_column": cfg.target_column,
@@ -107,11 +106,27 @@ def train_pipeline(cfg: Settings = settings) -> dict:
         "n_test": int(len(data["X_test"])),
         "trained_at": datetime.now(timezone.utc).isoformat(),
     }
-    with open(cfg.metadata_path, "w", encoding="utf-8") as fh:
+    with open(cfg.metadata_path(symbol), "w", encoding="utf-8") as fh:
         json.dump(metadata, fh, indent=2, ensure_ascii=False)
 
-    logger.info("Artefatos salvos em %s", MODELS_DIR)
+    logger.info("[%s] Artefatos salvos em %s", symbol, out_dir)
     return {"metrics": metrics, "metadata": metadata}
+
+
+def train_all(cfg: Settings = settings) -> dict:
+    """Treina um modelo para cada ticker em ``cfg.symbols``.
+
+    Retorna ``{ticker: resultado}``. Falhas em um ticker não interrompem os
+    demais — o erro é registrado e a execução segue.
+    """
+    results: dict = {}
+    for symbol in cfg.symbols:
+        try:
+            results[symbol] = train_symbol(symbol, cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[%s] Falha no treino: %s", symbol, exc)
+            results[symbol] = {"error": str(exc)}
+    return results
 
 
 if __name__ == "__main__":
@@ -119,5 +134,8 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
-    result = train_pipeline()
-    print(json.dumps(result["metrics"], indent=2))
+    all_results = train_all()
+    summary = {
+        sym: r.get("metrics", r.get("error")) for sym, r in all_results.items()
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False))

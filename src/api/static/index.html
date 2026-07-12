@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock LSTM · Previsão de Ações</title>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --text: #e2e8f0;
+      --accent: #38bdf8; --accent2: #22c55e; --border: #334155; --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.5;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 28px; }
+    .banner {
+      background: rgba(56,189,248,.1); border: 1px solid var(--accent);
+      border-radius: 12px; padding: 14px 18px; margin-bottom: 28px; font-size: .95rem;
+    }
+    .banner b { color: var(--accent); }
+    h2 { font-size: 1.05rem; margin: 28px 0 12px; color: var(--muted);
+         text-transform: uppercase; letter-spacing: .05em; }
+    .models { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 14px; }
+    .model {
+      background: var(--card); border: 2px solid var(--border); border-radius: 12px;
+      padding: 16px; cursor: pointer; transition: border-color .15s, transform .1s;
+    }
+    .model:hover { transform: translateY(-2px); }
+    .model.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .model .tk { font-size: 1.3rem; font-weight: 700; }
+    .model .metric { color: var(--muted); font-size: .85rem; margin-top: 6px; }
+    .model .metric span { color: var(--text); }
+    .panel { background: var(--card); border: 1px solid var(--border);
+             border-radius: 12px; padding: 20px; margin-top: 16px; }
+    label { display: block; font-size: .85rem; color: var(--muted); margin: 12px 0 4px; }
+    input, textarea, select {
+      width: 100%; background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-size: .95rem;
+    }
+    textarea { min-height: 70px; font-family: ui-monospace, monospace; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 120px; }
+    button {
+      margin-top: 16px; background: var(--accent); color: #04283a; border: none;
+      border-radius: 8px; padding: 11px 18px; font-weight: 700; font-size: .95rem;
+      cursor: pointer; margin-right: 10px;
+    }
+    button.alt { background: var(--accent2); color: #052e16; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .chosen { color: var(--accent); font-weight: 700; }
+    pre {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px; overflow-x: auto; margin-top: 16px; font-size: .85rem;
+    }
+    .err { color: var(--danger); }
+    a { color: var(--accent); }
+    footer { margin-top: 40px; color: var(--muted); font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📈 Previsão de Ações · LSTM</h1>
+    <p class="sub">Tech Challenge — Fase 4 · Pós Tech MLET</p>
+
+    <div class="banner">
+      Esta API foi treinada com <b id="count">3</b> modelos independentes —
+      <b>um por ticker</b>. <b>Escolha um ticker abaixo</b> antes de fazer a
+      previsão. Cada modelo tem suas próprias métricas de avaliação.
+    </div>
+
+    <h2>1 · Escolha o modelo (ticker)</h2>
+    <div class="models" id="models">Carregando modelos…</div>
+
+    <div class="panel" id="panel" style="display:none">
+      <h2 style="margin-top:0">2 · Prever <span class="chosen" id="chosenTk"></span></h2>
+
+      <label>Horizonte (dias à frente)</label>
+      <input type="number" id="horizon" value="5" min="1" max="30" />
+
+      <div style="margin-top:20px">
+        <b>Opção A — dados atuais (POST /predict/latest)</b>
+        <p class="sub" style="margin:4px 0">A API baixa o histórico recente do ticker automaticamente.</p>
+        <button class="alt" id="btnLatest">Prever com dados atuais</button>
+      </div>
+
+      <div style="margin-top:24px">
+        <b>Opção B — seus próprios preços (POST /predict)</b>
+        <label>Preços de fechamento (separados por vírgula, em ordem cronológica)</label>
+        <textarea id="prices" placeholder="100.1, 101.3, 99.8, 102.5, ..."></textarea>
+        <button id="btnPredict">Prever com esses preços</button>
+      </div>
+
+      <pre id="out" style="display:none"></pre>
+    </div>
+
+    <footer>
+      Documentação interativa (Swagger): <a href="/docs">/docs</a> ·
+      Catálogo de modelos: <a href="/models">/models</a> ·
+      Métricas: <a href="/metrics">/metrics</a>
+    </footer>
+  </div>
+
+  <script>
+    let selected = null;
+
+    async function loadModels() {
+      const box = document.getElementById('models');
+      try {
+        const res = await fetch('/models');
+        if (!res.ok) throw new Error('Nenhum modelo carregado. Treine primeiro.');
+        const data = await res.json();
+        document.getElementById('count').textContent = data.count;
+        box.innerHTML = '';
+        data.models.forEach(m => {
+          const el = document.createElement('div');
+          el.className = 'model';
+          el.dataset.symbol = m.symbol;
+          const mae = m.metrics.mae ?? '—', rmse = m.metrics.rmse ?? '—', mape = m.metrics.mape ?? '—';
+          el.innerHTML = `<div class="tk">${m.symbol}</div>
+            <div class="metric">MAE <span>${mae}</span></div>
+            <div class="metric">RMSE <span>${rmse}</span></div>
+            <div class="metric">MAPE <span>${mape}%</span></div>`;
+          el.onclick = () => choose(m.symbol, el);
+          box.appendChild(el);
+        });
+      } catch (e) {
+        box.innerHTML = `<span class="err">${e.message} (rode <code>python scripts/train.py</code>)</span>`;
+      }
+    }
+
+    function choose(symbol, el) {
+      selected = symbol;
+      document.querySelectorAll('.model').forEach(m => m.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('chosenTk').textContent = symbol;
+      document.getElementById('panel').style.display = 'block';
+    }
+
+    function showOut(obj, isError) {
+      const out = document.getElementById('out');
+      out.style.display = 'block';
+      out.className = isError ? 'err' : '';
+      out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    async function callApi(url, body) {
+      if (!selected) { showOut('Escolha um ticker primeiro.', true); return; }
+      showOut('Prevendo…', false);
+      try {
+        const res = await fetch(url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        showOut(data, !res.ok);
+      } catch (e) { showOut(String(e), true); }
+    }
+
+    document.getElementById('btnLatest').onclick = () => {
+      const horizon = +document.getElementById('horizon').value || 1;
+      callApi('/predict/latest', { symbol: selected, horizon });
+    };
+
+    document.getElementById('btnPredict').onclick = () => {
+      const horizon = +document.getElementById('horizon').value || 1;
+      const prices = document.getElementById('prices').value
+        .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+      callApi('/predict', { symbol: selected, prices, horizon });
+    };
+
+    loadModels();
+  </script>
+</body>
+</html>

@@ -26,24 +26,32 @@ fechamento. O projeto cobre todas as etapas exigidas:
 
 ## 🗂️ Estrutura do projeto
 
+> 🔀 **Multi-modelo:** o projeto treina **um modelo LSTM por ticker**. A API
+> serve todos eles e a pessoa **escolhe o ticker** (campo `symbol`) antes de
+> prever. Os tickers vêm da variável `SYMBOLS` (padrão: `DIS, AAPL, MSFT`).
+
 ```
 TechChallenge-Fase4/
 ├── src/
-│   ├── config.py             # Configuração central (env vars / .env)
+│   ├── config.py             # Configuração central (SYMBOLS, hiperparâmetros)
 │   ├── data/
 │   │   └── collector.py      # Download (yfinance) + janelas + scaling
 │   ├── model/
 │   │   ├── lstm_model.py     # Arquitetura da LSTM (Keras)
-│   │   ├── train.py          # Pipeline de treino ponta a ponta
+│   │   ├── train.py          # Treino por ticker (train_symbol / train_all)
 │   │   └── evaluate.py       # MAE, RMSE, MAPE
 │   └── api/
 │       ├── main.py           # App FastAPI (endpoints)
-│       ├── predictor.py      # Serviço de inferência (carrega artefatos)
+│       ├── predictor.py      # Registro que carrega 1 modelo por ticker
 │       ├── schemas.py        # Contratos Pydantic
-│       └── monitoring.py     # Métricas Prometheus + middleware
-├── scripts/train.py          # CLI de treino
+│       ├── monitoring.py     # Métricas Prometheus + middleware
+│       └── static/index.html # Página inicial p/ escolher o ticker e prever
+├── scripts/train.py          # CLI de treino (todos os tickers ou subconjunto)
 ├── tests/                    # Testes (métricas + smoke da API)
-├── models/                   # Artefatos gerados (.keras, .pkl, .json)
+├── models/                   # Artefatos por ticker: models/<TICKER>/...
+│   ├── DIS/{lstm_model.keras, scaler.pkl, metadata.json}
+│   ├── AAPL/...
+│   └── MSFT/...
 ├── monitoring/prometheus.yml # Config do Prometheus
 ├── Dockerfile
 ├── docker-compose.yml        # API + Prometheus
@@ -63,26 +71,27 @@ python -m venv .venv && source .venv/bin/activate   # opcional
 pip install -r requirements.txt
 ```
 
-### 2. Treinar o modelo
+### 2. Treinar os modelos (um por ticker)
 
-Baixa os dados, treina a LSTM, avalia e salva os artefatos em `models/`:
+Baixa os dados, treina uma LSTM para cada ticker, avalia e salva os artefatos:
 
 ```bash
-python scripts/train.py                                  # usa DIS (padrão)
-python scripts/train.py --symbol AAPL --start 2019-01-01 --end 2024-12-31
+python scripts/train.py                       # treina todos os SYMBOLS (DIS, AAPL, MSFT)
+python scripts/train.py --symbols DIS,AAPL    # treina só esses
 python scripts/train.py --epochs 50 --sequence-length 90
 ```
 
-Ao final são gerados:
-- `models/lstm_model.keras` — modelo treinado
-- `models/scaler.pkl` — `MinMaxScaler` ajustado
-- `models/metadata.json` — hiperparâmetros e métricas (MAE, RMSE, MAPE)
+Para cada ticker é criada a pasta `models/<TICKER>/` com:
+- `lstm_model.keras` — modelo treinado
+- `scaler.pkl` — `MinMaxScaler` ajustado
+- `metadata.json` — hiperparâmetros e métricas (MAE, RMSE, MAPE)
 
 ### 3. Subir a API
 
 ```bash
 uvicorn src.api.main:app --reload
-# Documentação interativa: http://localhost:8000/docs
+# Página inicial (escolha do ticker): http://localhost:8000/
+# Documentação interativa (Swagger):  http://localhost:8000/docs
 ```
 
 ### 4. Com Docker (API + Prometheus)
@@ -102,26 +111,45 @@ docker compose up --build
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
-| `GET`  | `/health` | Saúde do serviço e se o modelo está carregado |
-| `GET`  | `/model/info` | Métricas e metadados do modelo treinado |
-| `POST` | `/predict` | Previsão a partir de preços informados |
-| `POST` | `/predict/latest` | Busca dados atuais no Yahoo Finance e prevê |
+| `GET`  | `/` | Página inicial — **escolha do ticker** e previsão |
+| `GET`  | `/health` | Saúde do serviço e tickers disponíveis |
+| `GET`  | `/models` | **Catálogo dos modelos treinados** (para escolher o `symbol`) |
+| `POST` | `/predict` | Previsão a partir de preços informados (**exige `symbol`**) |
+| `POST` | `/predict/latest` | Baixa dados atuais do ticker e prevê (**exige `symbol`**) |
 | `GET`  | `/metrics` | Métricas Prometheus (monitoramento) |
 | `GET`  | `/docs` | Swagger UI |
+
+> ⚠️ **Escolha do modelo:** `/predict` e `/predict/latest` **exigem** o campo
+> `symbol`, que deve ser um dos tickers treinados. Consulte `GET /models` para
+> ver as opções disponíveis e suas métricas.
+
+### Exemplo — `GET /models`
+
+```json
+{
+  "count": 3,
+  "available_symbols": ["AAPL", "DIS", "MSFT"],
+  "models": [
+    {"symbol": "AAPL", "sequence_length": 60, "metrics": {"mae": 3.1, "rmse": 4.0, "mape": 1.8}, ...},
+    {"symbol": "DIS",  "sequence_length": 60, "metrics": {"mae": 2.4, "rmse": 3.1, "mape": 2.2}, ...},
+    {"symbol": "MSFT", "sequence_length": 60, "metrics": {"mae": 5.7, "rmse": 7.2, "mape": 1.5}, ...}
+  ]
+}
+```
 
 ### Exemplo — `POST /predict`
 
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{"prices": [100.1, 101.3, 99.8, 102.5, ...], "horizon": 5}'
+  -d '{"symbol": "AAPL", "prices": [100.1, 101.3, 99.8, 102.5, ...], "horizon": 5}'
 ```
 
 Resposta:
 
 ```json
 {
-  "symbol": "DIS",
+  "symbol": "AAPL",
   "horizon": 5,
   "last_input_price": 102.5,
   "predictions": [102.7, 103.1, 103.4, 103.2, 103.6],
@@ -140,12 +168,14 @@ curl -X POST http://localhost:8000/predict/latest \
   -d '{"symbol": "DIS", "horizon": 3}'
 ```
 
-A API baixa automaticamente o histórico recente do ticker e retorna a previsão.
+A API baixa automaticamente o histórico recente do ticker escolhido e prevê.
 
 ---
 
 ## 🧠 Modelo LSTM
 
+- **Um modelo independente por ticker** (mesma arquitetura, pesos e scaler
+  próprios), salvo em `models/<TICKER>/`.
 - Entrada: janela deslizante de `sequence_length` preços de fechamento.
 - Arquitetura: `LSTM` empilhadas (`lstm_layers`) com `Dropout`, seguidas de
   `Dense(1)`.
@@ -162,7 +192,8 @@ Métricas calculadas em **escala real de preço** (após inverter o scaling):
 - **RMSE** — Raiz do Erro Quadrático Médio
 - **MAPE** — Erro Percentual Absoluto Médio
 
-Ficam registradas em `models/metadata.json` e disponíveis em `GET /model/info`.
+Cada modelo tem suas próprias métricas, registradas em
+`models/<TICKER>/metadata.json` e disponíveis em `GET /models`.
 
 ---
 
@@ -173,7 +204,7 @@ O endpoint `/metrics` expõe, no formato Prometheus:
 - `http_requests_total` — contagem por rota/método/status
 - `http_request_duration_seconds` — **tempo de resposta** (histograma)
 - `model_inference_duration_seconds` — latência de inferência
-- `model_predictions_total` — total de previsões
+- `model_predictions_total{symbol=...}` — total de previsões **por ticker**
 - `process_cpu_percent` / `process_memory_mb` — **uso de recursos**
 
 Cada resposta HTTP inclui o cabeçalho `X-Process-Time-ms`.
@@ -209,7 +240,7 @@ Todos os parâmetros podem ser ajustados por variáveis de ambiente ou `.env`
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `SYMBOL` | `DIS` | Ticker da empresa |
+| `SYMBOLS` | `DIS,AAPL,MSFT` | Tickers (um modelo por ticker), separados por vírgula |
 | `START_DATE` / `END_DATE` | `2018-01-01` / `2024-07-20` | Intervalo do histórico |
 | `SEQUENCE_LENGTH` | `60` | Tamanho da janela temporal |
 | `LSTM_UNITS` / `LSTM_LAYERS` | `64` / `2` | Capacidade da rede |

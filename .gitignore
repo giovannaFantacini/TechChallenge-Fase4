@@ -8,11 +8,12 @@ env/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Artefatos de modelo (gerados pelo treino)
-models/*.keras
-models/*.pkl
-models/*.h5
-models/metadata.json
+# Artefatos de modelo: SÃO versionados de propósito (models/<TICKER>/...),
+# para que o deploy em produção já contenha os modelos treinados.
+# Se preferir não versioná-los, descomente as linhas abaixo:
+# models/**/*.keras
+# models/**/*.pkl
+# models/**/metadata.json
 
 # Ambiente
 .env

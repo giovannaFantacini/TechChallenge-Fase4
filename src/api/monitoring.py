@@ -27,7 +27,9 @@ REQUEST_LATENCY = Histogram(
 
 # --- Métricas de inferência --------------------------------------------------
 PREDICTION_COUNT = Counter(
-    "model_predictions_total", "Total de previsões geradas pelo modelo"
+    "model_predictions_total",
+    "Total de previsões geradas pelo modelo",
+    ["symbol"],
 )
 INFERENCE_LATENCY = Histogram(
     "model_inference_duration_seconds",
