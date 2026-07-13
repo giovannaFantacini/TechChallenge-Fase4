@@ -1,7 +1,7 @@
 {
   "symbol": "AAPL",
-  "start_date": "2018-01-01",
-  "end_date": "2024-07-20",
+  "start_date": "2020-01-01",
+  "end_date": "2026-07-01",
   "target_column": "Close",
   "sequence_length": 60,
   "train_split": 0.8,
@@ -10,15 +10,15 @@
     "lstm_layers": 2,
     "dropout": 0.2,
     "learning_rate": 0.001,
-    "epochs_run": 100,
+    "epochs_run": 60,
     "batch_size": 32
   },
   "metrics": {
-    "mae": 4.9605,
-    "rmse": 6.3086,
-    "mape": 2.651
+    "mae": 6.4863,
+    "rmse": 8.4963,
+    "mape": 2.6965
   },
-  "n_train": 1257,
-  "n_test": 330,
-  "trained_at": "2026-07-12T15:44:26.825703+00:00"
+  "n_train": 1244,
+  "n_test": 327,
+  "trained_at": "2026-07-12T16:15:32.290353+00:00"
 }

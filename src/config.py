@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Diretório raiz do projeto (…/TechChallenge-Fase4)
@@ -32,9 +31,12 @@ class Settings(BaseSettings):
 
     # ----- Coleta de dados -----
     # Tickers para os quais serão treinados modelos (um modelo por ticker).
-    symbols: List[str] = ["DIS", "AAPL", "MSFT"]
-    start_date: str = "2018-01-01"      # início do histórico
-    end_date: str = "2024-07-20"        # fim do histórico
+    # String separada por vírgula (ex.: "DIS,AAPL,MSFT"); use `symbol_list` para
+    # obter a lista já normalizada. Manter como `str` evita que o pydantic-settings
+    # tente interpretar o valor do .env como JSON.
+    symbols: str = "DIS,AAPL,MSFT"
+    start_date: str = "2020-01-01"      # início do histórico
+    end_date: str = "2026-07-01"        # fim do histórico
     target_column: str = "Close"        # coluna que será prevista
 
     # ----- Janela temporal / sequências -----
@@ -59,15 +61,10 @@ class Settings(BaseSettings):
     api_title: str = "Stock Price Prediction API - LSTM"
     api_version: str = "1.0.0"
 
-    @field_validator("symbols", mode="before")
-    @classmethod
-    def _split_symbols(cls, value):
-        """Aceita ``SYMBOLS=DIS,AAPL,MSFT`` (string) além de lista/JSON."""
-        if isinstance(value, str):
-            return [s.strip().upper() for s in value.split(",") if s.strip()]
-        if isinstance(value, (list, tuple)):
-            return [str(s).strip().upper() for s in value if str(s).strip()]
-        return value
+    @property
+    def symbol_list(self) -> List[str]:
+        """Lista de tickers normalizada (sem espaços, em maiúsculas)."""
+        return [s.strip().upper() for s in self.symbols.split(",") if s.strip()]
 
     # ----- Caminhos por ticker -----
     def symbol_dir(self, symbol: str) -> Path:

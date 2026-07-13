@@ -47,7 +47,7 @@ def main() -> None:
 
     logging.getLogger(__name__).info(
         "Treinando %s | período=%s→%s janela=%d épocas=%d",
-        cfg.symbols, cfg.start_date, cfg.end_date, cfg.sequence_length, cfg.epochs,
+        cfg.symbol_list, cfg.start_date, cfg.end_date, cfg.sequence_length, cfg.epochs,
     )
     results = train_all(cfg)
 

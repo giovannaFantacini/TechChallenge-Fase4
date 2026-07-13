@@ -49,7 +49,7 @@ class ModelRegistry:
         from tensorflow.keras.models import load_model
 
         self._models.clear()
-        for symbol in self.cfg.symbols:
+        for symbol in self.cfg.symbol_list:
             model_path = self.cfg.model_path(symbol)
             if not model_path.exists():
                 logger.warning(

@@ -1,0 +1,25 @@
+# Blueprint do Render — https://render.com/docs/blueprint-spec
+# No Render: New → Blueprint → conecte este repositório. Ele lê este arquivo
+# e provisiona o serviço automaticamente (Docker).
+services:
+  - type: web
+    name: stock-lstm-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # TensorFlow em memória passa de 512 MB. Os planos free/starter (512 MB)
+    # podem dar OOM ao carregar os modelos — use standard (2 GB) com folga.
+    plan: standard
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYMBOLS
+        value: DIS,AAPL,MSFT
+      - key: START_DATE
+        value: "2018-01-01"
+      - key: END_DATE
+        value: "2024-07-20"
+      - key: SEQUENCE_LENGTH
+        value: "60"
+      - key: TF_CPP_MIN_LOG_LEVEL
+        value: "2"

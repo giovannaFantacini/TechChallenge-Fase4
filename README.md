@@ -1,18 +1,20 @@
 # Tech Challenge — Fase 4 · Previsão de Ações com LSTM
 
-Pipeline completo de **Deep Learning** para prever o **preço de fechamento** de
-uma ação usando uma rede neural **LSTM (Long Short-Term Memory)** — da coleta
-dos dados ao **deploy de uma API RESTful** com **monitoramento**.
+Este projeto implementa, de ponta a ponta, um pipeline de **Deep Learning** que
+prevê o **preço de fechamento** de ações usando redes neurais **LSTM (Long
+Short-Term Memory)**. Ele cobre todo o ciclo: da coleta dos dados históricos ao
+treino e avaliação do modelo, terminando em uma **API RESTful** que serve as
+previsões e é **monitorada** em tempo real.
 
 > Pós Tech MLET · Tech Challenge Fase 4
 
 ---
 
-## 🎯 Objetivo
+## Objetivo
 
-Construir e servir um modelo preditivo de séries temporais que, dado o
-histórico recente de preços de uma ação, prevê o(s) próximo(s) preço(s) de
-fechamento. O projeto cobre todas as etapas exigidas:
+O objetivo é, dado o histórico recente de preços de uma ação, prever o(s)
+próximo(s) preço(s) de fechamento. Cada requisito do desafio foi endereçado em
+uma parte específica do código:
 
 | Etapa | Requisito | Onde está |
 |-------|-----------|-----------|
@@ -22,13 +24,56 @@ fechamento. O projeto cobre todas as etapas exigidas:
 | 4 | Deploy via API RESTful (FastAPI) | [`src/api/`](src/api) |
 | 5 | Escalabilidade e monitoramento (Prometheus) | [`src/api/monitoring.py`](src/api/monitoring.py) |
 
+Uma decisão de projeto importante: em vez de um único modelo, o sistema treina
+**um modelo LSTM independente para cada ticker**. A API carrega todos eles e o
+usuário **escolhe qual ticker** quer prever. Por padrão, são treinados três:
+**DIS**, **AAPL** e **MSFT** (configurável pela variável `SYMBOLS`).
+
+---
+
+## 🔎 Como funciona (a pipeline)
+
+O fluxo completo, do dado bruto à previsão servida pela API:
+
+**1. Coleta.** Os preços históricos são baixados do Yahoo Finance com a
+biblioteca `yfinance`. O código normaliza o retorno (que pode vir com colunas
+em `MultiIndex`) e trabalha com a coluna de fechamento (`Close`).
+
+**2. Pré-processamento.** A série é escalada para o intervalo [0, 1] com um
+`MinMaxScaler` — mas o scaler é **ajustado apenas na parte de treino**, nunca no
+conjunto de teste. Isso evita *data leakage* (deixar o modelo "enxergar" o
+futuro). Em seguida a série é recortada em **janelas deslizantes**: cada exemplo
+são `sequence_length` dias consecutivos (padrão **60**) e o alvo é o preço do
+dia seguinte.
+
+**3. Modelo.** Uma rede `Sequential` do Keras com camadas **LSTM empilhadas**
+(com `Dropout` para regularização) e uma camada `Dense(1)` na saída, que produz
+o próximo preço (ainda em escala normalizada).
+
+**4. Treino e avaliação.** O modelo é treinado com `Adam` e perda `MSE`, usando
+`EarlyStopping` (para parar quando a validação para de melhorar) e
+`ReduceLROnPlateau` (para reduzir a taxa de aprendizado automaticamente). A
+avaliação é feita **em escala real de preço** (desfazendo a normalização) com as
+métricas **MAE**, **RMSE** e **MAPE**.
+
+**5. Salvamento.** Para cada ticker são gravados três artefatos em
+`models/<TICKER>/`: o modelo (`.keras`), o `scaler` (`.pkl`) e um
+`metadata.json` com hiperparâmetros e métricas. É isso que a API carrega — ela
+**não treina nada em tempo de execução**, apenas faz inferência.
+
+**6. API.** Uma aplicação FastAPI carrega todos os modelos disponíveis na
+subida e expõe endpoints de previsão. Como há vários modelos, todo pedido de
+previsão precisa informar qual ticker usar. A previsão de vários dias à frente é
+feita de forma **recursiva**: a previsão de um dia é realimentada como entrada
+para prever o dia seguinte.
+
+**7. Monitoramento.** Um middleware mede o tempo de cada requisição e o endpoint
+`/metrics` expõe, no formato Prometheus, latência, contagem de previsões por
+ticker e uso de CPU/memória.
+
 ---
 
 ## 🗂️ Estrutura do projeto
-
-> 🔀 **Multi-modelo:** o projeto treina **um modelo LSTM por ticker**. A API
-> serve todos eles e a pessoa **escolhe o ticker** (campo `symbol`) antes de
-> prever. Os tickers vêm da variável `SYMBOLS` (padrão: `DIS, AAPL, MSFT`).
 
 ```
 TechChallenge-Fase4/
@@ -43,7 +88,7 @@ TechChallenge-Fase4/
 │   └── api/
 │       ├── main.py           # App FastAPI (endpoints)
 │       ├── predictor.py      # Registro que carrega 1 modelo por ticker
-│       ├── schemas.py        # Contratos Pydantic
+│       ├── schemas.py        # Contratos de entrada/saída (Pydantic)
 │       ├── monitoring.py     # Métricas Prometheus + middleware
 │       └── static/index.html # Página inicial p/ escolher o ticker e prever
 ├── scripts/train.py          # CLI de treino (todos os tickers ou subconjunto)
@@ -61,19 +106,20 @@ TechChallenge-Fase4/
 
 ---
 
-## 🚀 Como executar
+## Como rodar
 
-### 1. Ambiente
+### 1. Preparar o ambiente
 
 ```bash
 cd TechChallenge-Fase4
-python -m venv .venv && source .venv/bin/activate   # opcional
+python -m venv .venv && source .venv/bin/activate   # recomendado
 pip install -r requirements.txt
 ```
 
 ### 2. Treinar os modelos (um por ticker)
 
-Baixa os dados, treina uma LSTM para cada ticker, avalia e salva os artefatos:
+Este passo baixa os dados, treina uma LSTM para cada ticker, avalia e salva os
+artefatos:
 
 ```bash
 python scripts/train.py                       # treina todos os SYMBOLS (DIS, AAPL, MSFT)
@@ -81,29 +127,41 @@ python scripts/train.py --symbols DIS,AAPL    # treina só esses
 python scripts/train.py --epochs 50 --sequence-length 90
 ```
 
-Para cada ticker é criada a pasta `models/<TICKER>/` com:
-- `lstm_model.keras` — modelo treinado
-- `scaler.pkl` — `MinMaxScaler` ajustado
+Ao final, cada ticker tem sua pasta `models/<TICKER>/` com:
+- `lstm_model.keras` — o modelo treinado
+- `scaler.pkl` — o `MinMaxScaler` ajustado
 - `metadata.json` — hiperparâmetros e métricas (MAE, RMSE, MAPE)
 
 ### 3. Subir a API
 
 ```bash
 uvicorn src.api.main:app --reload
-# Página inicial (escolha do ticker): http://localhost:8000/
-# Documentação interativa (Swagger):  http://localhost:8000/docs
 ```
 
-### 4. Com Docker (API + Prometheus)
+- Página inicial (escolha do ticker): <http://localhost:8000/>
+- Documentação interativa (Swagger): <http://localhost:8000/docs>
+
+A página inicial lista os modelos disponíveis (com suas métricas), deixa você
+**escolher um ticker** e testar as duas formas de previsão sem escrever código.
+
+### 4. (Opcional) Rodar com Docker + Prometheus
+
+Para subir a API junto com um Prometheus já configurado:
 
 ```bash
 docker compose up --build
-# API .......... http://localhost:8000/docs
+# API .......... http://localhost:8000/
 # Prometheus ... http://localhost:9090
 ```
 
-> Treine o modelo **antes** de buildar (ou monte o volume `./models`) para que
-> os artefatos estejam disponíveis dentro do contêiner.
+> Treine os modelos **antes** de buildar (os artefatos em `models/` entram na
+> imagem) ou use o volume já mapeado no `docker-compose.yml`.
+
+### 5. Rodar os testes
+
+```bash
+pytest
+```
 
 ---
 
@@ -119,33 +177,31 @@ docker compose up --build
 | `GET`  | `/metrics` | Métricas Prometheus (monitoramento) |
 | `GET`  | `/docs` | Swagger UI |
 
-> ⚠️ **Escolha do modelo:** `/predict` e `/predict/latest` **exigem** o campo
-> `symbol`, que deve ser um dos tickers treinados. Consulte `GET /models` para
-> ver as opções disponíveis e suas métricas.
+> ⚠️ Como a API serve **vários modelos**, `/predict` e `/predict/latest`
+> **exigem** o campo `symbol`, que deve ser um dos tickers treinados. Consulte
+> `GET /models` para ver as opções e suas métricas.
 
-### Exemplo — `GET /models`
+### `GET /models` — descobrir os modelos disponíveis
 
 ```json
 {
   "count": 3,
   "available_symbols": ["AAPL", "DIS", "MSFT"],
   "models": [
-    {"symbol": "AAPL", "sequence_length": 60, "metrics": {"mae": 3.1, "rmse": 4.0, "mape": 1.8}, ...},
-    {"symbol": "DIS",  "sequence_length": 60, "metrics": {"mae": 2.4, "rmse": 3.1, "mape": 2.2}, ...},
-    {"symbol": "MSFT", "sequence_length": 60, "metrics": {"mae": 5.7, "rmse": 7.2, "mape": 1.5}, ...}
+    {"symbol": "AAPL", "sequence_length": 60, "metrics": {"mae": 6.49, "rmse": 8.50, "mape": 2.70}, ...},
+    {"symbol": "DIS",  "sequence_length": 60, "metrics": {"mae": 2.13, "rmse": 3.01, "mape": 2.06}, ...},
+    {"symbol": "MSFT", "sequence_length": 60, "metrics": {"mae": 13.20, "rmse": 16.93, "mape": 3.03}, ...}
   ]
 }
 ```
 
-### Exemplo — `POST /predict`
+### `POST /predict` — prever a partir de preços que você fornece
 
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"symbol": "AAPL", "prices": [100.1, 101.3, 99.8, 102.5, ...], "horizon": 5}'
 ```
-
-Resposta:
 
 ```json
 {
@@ -157,10 +213,10 @@ Resposta:
 }
 ```
 
-> `prices` deve conter pelo menos `sequence_length` valores (padrão **60**),
-> em ordem cronológica. `horizon` faz previsão recursiva de N dias.
+> `prices` deve ter pelo menos `sequence_length` valores (padrão **60**), em
+> ordem cronológica. `horizon` é quantos dias à frente prever (recursivamente).
 
-### Exemplo — `POST /predict/latest`
+### `POST /predict/latest` — prever com os dados mais recentes
 
 ```bash
 curl -X POST http://localhost:8000/predict/latest \
@@ -168,32 +224,49 @@ curl -X POST http://localhost:8000/predict/latest \
   -d '{"symbol": "DIS", "horizon": 3}'
 ```
 
-A API baixa automaticamente o histórico recente do ticker escolhido e prevê.
+Aqui você não precisa mandar os preços: a API baixa sozinha o histórico recente
+do ticker escolhido no Yahoo Finance e devolve a previsão.
 
 ---
 
-## 🧠 Modelo LSTM
+## 🧠 Detalhes do modelo LSTM
 
-- **Um modelo independente por ticker** (mesma arquitetura, pesos e scaler
-  próprios), salvo em `models/<TICKER>/`.
-- Entrada: janela deslizante de `sequence_length` preços de fechamento.
-- Arquitetura: `LSTM` empilhadas (`lstm_layers`) com `Dropout`, seguidas de
-  `Dense(1)`.
-- Pré-processamento: `MinMaxScaler` **ajustado apenas no treino** (evita data
+- **Um modelo independente por ticker** — mesma arquitetura, mas pesos e scaler
+  próprios, salvos em `models/<TICKER>/`.
+- **Entrada:** janela deslizante de `sequence_length` preços de fechamento.
+- **Arquitetura:** camadas `LSTM` empilhadas (`lstm_layers`) com `Dropout`,
+  seguidas de `Dense(1)`.
+- **Pré-processamento:** `MinMaxScaler` **ajustado só no treino** (evita data
   leakage).
-- Otimizador `Adam`, perda `MSE`, `EarlyStopping` + `ReduceLROnPlateau`.
-- Previsão multi-passo por realimentação recursiva.
+- **Treino:** otimizador `Adam`, perda `MSE`, com `EarlyStopping` e
+  `ReduceLROnPlateau`.
+- **Previsão multi-passo:** feita por realimentação recursiva das previsões.
 
 ### Avaliação
 
-Métricas calculadas em **escala real de preço** (após inverter o scaling):
+As métricas são calculadas em **escala real de preço** (após desfazer a
+normalização):
 
 - **MAE** — Erro Absoluto Médio
 - **RMSE** — Raiz do Erro Quadrático Médio
 - **MAPE** — Erro Percentual Absoluto Médio
 
-Cada modelo tem suas próprias métricas, registradas em
-`models/<TICKER>/metadata.json` e disponíveis em `GET /models`.
+Resultados obtidos no treino dos três modelos (histórico de 2020-01-01 a
+2026-07-01, janela de 60 dias):
+
+| Ticker | MAE | RMSE | MAPE |
+|--------|-----|------|------|
+| DIS  | 2.13  | 3.01  | **2.06%** |
+| AAPL | 6.49  | 8.50  | **2.70%** |
+| MSFT | 13.20 | 16.93 | **3.03%** |
+
+Cada modelo guarda suas métricas em `models/<TICKER>/metadata.json`, também
+acessíveis via `GET /models`.
+
+> Observação: os modelos são treinados com dados até `END_DATE` (2026-07-01).
+> Para manter as previsões "ao vivo" (`/predict/latest`) atualizadas, retreine
+> periodicamente com uma data final mais recente, por exemplo:
+> `python scripts/train.py --end 2026-12-31`.
 
 ---
 
@@ -207,14 +280,13 @@ O endpoint `/metrics` expõe, no formato Prometheus:
 - `model_predictions_total{symbol=...}` — total de previsões **por ticker**
 - `process_cpu_percent` / `process_memory_mb` — **uso de recursos**
 
-Cada resposta HTTP inclui o cabeçalho `X-Process-Time-ms`.
+Além disso, cada resposta HTTP traz o cabeçalho `X-Process-Time-ms` com o tempo
+de processamento. O `docker-compose.yml` já sobe um **Prometheus** apontando
+para a API (`monitoring/prometheus.yml`), pronto para dashboards e alertas.
 
-O `docker-compose.yml` já sobe um **Prometheus** apontando para a API
-(`monitoring/prometheus.yml`), permitindo dashboards e alertas.
-
-**Escalabilidade:** a aplicação é *stateless* (o estado vive nos artefatos em
-`models/`), então escala horizontalmente atrás de um load balancer. Em
-produção, rode múltiplos workers Uvicorn/Gunicorn:
+**Escalabilidade:** a aplicação é *stateless* (todo o estado vive nos artefatos
+em `models/`), então escala horizontalmente. Para mais throughput, basta rodar
+múltiplos workers:
 
 ```bash
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 4
@@ -228,20 +300,22 @@ uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 4
 pytest
 ```
 
-- `tests/test_metrics.py` — métricas e geração de sequências (sem TensorFlow).
-- `tests/test_api.py` — smoke test da API (health + validação).
+- `tests/test_metrics.py` — valida as métricas e a geração de sequências (roda
+  sem TensorFlow).
+- `tests/test_api.py` — smoke test da API: sobe a aplicação, checa o `/health` e
+  garante que a previsão exige um ticker válido.
 
 ---
 
 ## ⚙️ Configuração
 
-Todos os parâmetros podem ser ajustados por variáveis de ambiente ou `.env`
-(veja [`.env.example`](.env.example)). Principais:
+Todos os parâmetros podem ser ajustados por variáveis de ambiente ou por um
+arquivo `.env` (veja [`.env.example`](.env.example)). Os principais:
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
 | `SYMBOLS` | `DIS,AAPL,MSFT` | Tickers (um modelo por ticker), separados por vírgula |
-| `START_DATE` / `END_DATE` | `2018-01-01` / `2024-07-20` | Intervalo do histórico |
+| `START_DATE` / `END_DATE` | `2020-01-01` / `2026-07-01` | Intervalo do histórico |
 | `SEQUENCE_LENGTH` | `60` | Tamanho da janela temporal |
 | `LSTM_UNITS` / `LSTM_LAYERS` | `64` / `2` | Capacidade da rede |
 | `EPOCHS` / `BATCH_SIZE` | `100` / `32` | Treino |
@@ -251,8 +325,7 @@ Todos os parâmetros podem ser ajustados por variáveis de ambiente ou `.env`
 ## 📦 Entregáveis do desafio
 
 - ✅ Código-fonte do modelo LSTM + documentação (este repositório)
-- ✅ `Dockerfile` e `docker-compose.yml` para deploy da API
-- ✅ API RESTful (FastAPI) servindo o modelo
+- ✅ `Dockerfile` + `docker-compose.yml` para conteinerizar a API
+- ✅ API RESTful (FastAPI) servindo os modelos, com escolha de ticker
 - ✅ Monitoramento (Prometheus) de tempo de resposta e uso de recursos
-- 🎥 Vídeo de demonstração — 
-- 🌐 Link da API em produção — 
+- 🎥 Vídeo de demonstração — *(gravar e adicionar o link aqui)*

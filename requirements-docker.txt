@@ -1,0 +1,21 @@
+# Dependências da imagem de produção (container Linux).
+# Usa `tensorflow-cpu` (metade do tamanho de `tensorflow`, sem libs CUDA) e
+# omite ferramentas de teste. Para dev local, use requirements.txt.
+
+# ----- Núcleo de dados / ML -----
+numpy>=1.26
+pandas>=2.1
+scikit-learn>=1.4
+yfinance>=0.2.40
+tensorflow-cpu>=2.16
+joblib>=1.3
+
+# ----- API -----
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.2
+
+# ----- Monitoramento -----
+prometheus-client>=0.20
+psutil>=5.9

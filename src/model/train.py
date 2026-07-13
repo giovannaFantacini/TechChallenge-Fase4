@@ -120,7 +120,7 @@ def train_all(cfg: Settings = settings) -> dict:
     demais — o erro é registrado e a execução segue.
     """
     results: dict = {}
-    for symbol in cfg.symbols:
+    for symbol in cfg.symbol_list:
         try:
             results[symbol] = train_symbol(symbol, cfg)
         except Exception as exc:  # noqa: BLE001
