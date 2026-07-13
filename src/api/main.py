@@ -136,12 +136,15 @@ async def predict(req: PredictRequest):
         raise HTTPException(status_code=422, detail=str(exc))
 
     PREDICTION_COUNT.labels(symbol=result["symbol"]).inc()
+    # Devolve o histórico informado (limitado à cauda) para plotagem.
+    history = [round(float(p), 4) for p in req.prices[-250:]]
     return PredictResponse(
         symbol=result["symbol"],
         horizon=req.horizon,
         last_input_price=req.prices[-1],
         predictions=result["predictions"],
         inference_ms=result["inference_ms"],
+        history=history,
     )
 
 
@@ -186,6 +189,16 @@ async def predict_latest(req: PredictLatestRequest):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+    # Datas do histórico e projeção das datas futuras (dias úteis) para o gráfico.
+    import pandas as pd
+
+    hist_dates = [d.strftime("%Y-%m-%d") for d in df.index]
+    last_date = df.index[-1]
+    future = pd.bdate_range(
+        start=last_date + pd.Timedelta(days=1), periods=req.horizon
+    )
+    pred_dates = [d.strftime("%Y-%m-%d") for d in future]
+
     PREDICTION_COUNT.labels(symbol=result["symbol"]).inc()
     return PredictResponse(
         symbol=result["symbol"],
@@ -193,6 +206,9 @@ async def predict_latest(req: PredictLatestRequest):
         last_input_price=round(prices[-1], 4),
         predictions=result["predictions"],
         inference_ms=result["inference_ms"],
+        history=[round(float(p), 4) for p in prices],
+        history_dates=hist_dates,
+        prediction_dates=pred_dates,
     )
 
 

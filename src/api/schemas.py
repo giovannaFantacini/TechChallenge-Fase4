@@ -57,6 +57,10 @@ class PredictResponse(BaseModel):
     last_input_price: float
     predictions: List[float]
     inference_ms: float
+    # Série histórica usada como contexto (para plotar o gráfico na interface).
+    history: List[float] = []
+    history_dates: Optional[List[str]] = None      # datas do histórico (se houver)
+    prediction_dates: Optional[List[str]] = None    # datas futuras previstas (se houver)
 
 
 class ModelCatalogItem(BaseModel):

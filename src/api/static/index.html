@@ -8,6 +8,7 @@
     :root {
       --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --text: #e2e8f0;
       --accent: #38bdf8; --accent2: #22c55e; --border: #334155; --danger: #f87171;
+      --hist: #38bdf8; --pred: #f59e0b;
     }
     * { box-sizing: border-box; }
     body {
@@ -58,6 +59,11 @@
     }
     .err { color: var(--danger); }
     a { color: var(--accent); }
+    #chartWrap svg { width: 100%; height: auto; background: var(--bg);
+                     border: 1px solid var(--border); border-radius: 8px; }
+    .legend { display: flex; gap: 20px; margin-top: 10px; font-size: .85rem; color: var(--muted); }
+    .legend .item { display: flex; align-items: center; gap: 6px; }
+    .legend .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
     footer { margin-top: 40px; color: var(--muted); font-size: .85rem; }
   </style>
 </head>
@@ -92,6 +98,15 @@
         <label>Preços de fechamento (separados por vírgula, em ordem cronológica)</label>
         <textarea id="prices" placeholder="100.1, 101.3, 99.8, 102.5, ..."></textarea>
         <button id="btnPredict">Prever com esses preços</button>
+      </div>
+
+      <div id="chartWrap" style="display:none; margin-top:24px">
+        <h2 style="margin:0 0 8px">Gráfico — histórico e previsão</h2>
+        <div id="chart"></div>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="background:var(--hist)"></span> Histórico de preços</span>
+          <span class="item"><span class="swatch" style="background:var(--pred)"></span> Valores previstos</span>
+        </div>
       </div>
 
       <pre id="out" style="display:none"></pre>
@@ -147,9 +162,75 @@
       out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
     }
 
+    function clearChart() {
+      document.getElementById('chartWrap').style.display = 'none';
+      document.getElementById('chart').innerHTML = '';
+    }
+
+    // Desenha um gráfico de linha em SVG: histórico (azul) + previsão (laranja),
+    // com a linha prevista continuando a partir do último ponto real.
+    function renderChart(resp) {
+      const MAXH = 90;                              // limita o histórico exibido
+      const hist = (resp.history || []).slice(-MAXH);
+      const preds = resp.predictions || [];
+      if (hist.length < 2 || preds.length < 1) { clearChart(); return; }
+
+      const histDates = resp.history_dates ? resp.history_dates.slice(-MAXH) : null;
+      const predDates = resp.prediction_dates || null;
+
+      const W = 720, H = 320, padL = 52, padR = 16, padT = 16, padB = 42;
+      const all = hist.concat(preds);
+      let ymin = Math.min(...all), ymax = Math.max(...all);
+      const ypad = (ymax - ymin) * 0.08 || 1;
+      ymin -= ypad; ymax += ypad;
+      const nTotal = hist.length + preds.length;    // pontos no eixo X
+      const xFor = i => padL + i * (W - padL - padR) / (nTotal - 1);
+      const yFor = v => padT + (ymax - v) * (H - padT - padB) / (ymax - ymin);
+
+      const startIdx = hist.length - 1;             // índice do último real
+      const histPts = hist.map((v, i) => `${xFor(i).toFixed(1)},${yFor(v).toFixed(1)}`).join(' ');
+      // começa no último ponto real -> as linhas ficam conectadas
+      const predSeq = [hist[hist.length - 1], ...preds];
+      const predPts = predSeq.map((v, k) => `${xFor(startIdx + k).toFixed(1)},${yFor(v).toFixed(1)}`).join(' ');
+      const bx = xFor(startIdx);
+
+      const fmt = v => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
+      // grade horizontal + rótulos do eixo Y
+      let grid = '';
+      for (let t = 0; t <= 4; t++) {
+        const v = ymax - (ymax - ymin) * t / 4, y = yFor(v);
+        grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#334155" stroke-width="1"/>`;
+        grid += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" fill="#94a3b8" font-size="11" text-anchor="end">${fmt(v)}</text>`;
+      }
+      // rótulos do eixo X (início, divisa, fim)
+      const xlabel = (x, txt, anchor) =>
+        `<text x="${x.toFixed(1)}" y="${H - padB + 22}" fill="#94a3b8" font-size="11" text-anchor="${anchor}">${txt}</text>`;
+      const startLbl = histDates ? histDates[0] : `−${hist.length}d`;
+      const bLbl = histDates ? histDates[histDates.length - 1] : 'último';
+      const endLbl = predDates ? predDates[predDates.length - 1] : `+${preds.length}d`;
+
+      const lastPred = preds[preds.length - 1];
+      const svg = `
+        <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Gráfico de histórico e previsão">
+          ${grid}
+          <line x1="${bx.toFixed(1)}" y1="${padT}" x2="${bx.toFixed(1)}" y2="${H - padB}" stroke="#64748b" stroke-width="1" stroke-dasharray="4 4"/>
+          <polyline fill="none" stroke="var(--hist)" stroke-width="2" points="${histPts}"/>
+          <polyline fill="none" stroke="var(--pred)" stroke-width="2.5" stroke-dasharray="6 4" points="${predPts}"/>
+          <circle cx="${bx.toFixed(1)}" cy="${yFor(hist[hist.length - 1]).toFixed(1)}" r="3.5" fill="var(--hist)"/>
+          <circle cx="${xFor(nTotal - 1).toFixed(1)}" cy="${yFor(lastPred).toFixed(1)}" r="3.5" fill="var(--pred)"/>
+          <text x="${xFor(nTotal - 1).toFixed(1)}" y="${(yFor(lastPred) - 8).toFixed(1)}" fill="var(--pred)" font-size="11" text-anchor="end">${fmt(lastPred)}</text>
+          ${xlabel(padL, startLbl, 'start')}
+          ${xlabel(bx, bLbl, 'middle')}
+          ${xlabel(W - padR, endLbl, 'end')}
+        </svg>`;
+      document.getElementById('chart').innerHTML = svg;
+      document.getElementById('chartWrap').style.display = 'block';
+    }
+
     async function callApi(url, body) {
       if (!selected) { showOut('Escolha um ticker primeiro.', true); return; }
       showOut('Prevendo…', false);
+      clearChart();
       try {
         const res = await fetch(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -157,6 +238,7 @@
         });
         const data = await res.json();
         showOut(data, !res.ok);
+        if (res.ok && data.history && data.history.length) renderChart(data);
       } catch (e) { showOut(String(e), true); }
     }
 

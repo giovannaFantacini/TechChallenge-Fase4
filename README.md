@@ -143,6 +143,9 @@ uvicorn src.api.main:app --reload
 
 A página inicial lista os modelos disponíveis (com suas métricas), deixa você
 **escolher um ticker** e testar as duas formas de previsão sem escrever código.
+O resultado é exibido em um **gráfico de linha** que mostra o histórico de
+preços (em azul) e a **continuação prevista** (em laranja), conectados no último
+ponto real — deixando visível onde termina o passado e começa a previsão.
 
 ### 4. (Opcional) Rodar com Docker + Prometheus
 
@@ -326,6 +329,6 @@ arquivo `.env` (veja [`.env.example`](.env.example)). Os principais:
 
 - ✅ Código-fonte do modelo LSTM + documentação (este repositório)
 - ✅ `Dockerfile` + `docker-compose.yml` para conteinerizar a API
-- ✅ API RESTful (FastAPI) servindo os modelos, com escolha de ticker
+- ✅ API RESTful (FastAPI) servindo os modelos, com escolha de ticker - https://techchallenge-fase4.onrender.com/
 - ✅ Monitoramento (Prometheus) de tempo de resposta e uso de recursos
-- 🎥 Vídeo de demonstração — *(gravar e adicionar o link aqui)*
+- 🎥 Vídeo de demonstração —
