@@ -3,97 +3,162 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stock LSTM · Previsão de Ações</title>
+  <title>FIAP Pós Tech · Previsão de Ações (LSTM)</title>
   <style>
+    /* Paleta no padrão FIAP: magenta como cor de marca, tema claro. */
     :root {
-      --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --text: #e2e8f0;
-      --accent: #38bdf8; --accent2: #22c55e; --border: #334155; --danger: #f87171;
-      --hist: #38bdf8; --pred: #f59e0b;
+      --fiap: #ED145B; --fiap-dark: #C10E49; --fiap-soft: #fde7ee;
+      --bg: #f4f5f7; --card: #ffffff; --text: #25282b; --muted: #6b7280;
+      --border: #e2e5e9; --ok: #1d9e75;
+      --hist: #2a6fb0;      /* histórico: azul */
+      --pred: #ED145B;      /* previsão: magenta FIAP */
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: var(--bg); color: var(--text); line-height: 1.5;
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Helvetica Neue", Arial, system-ui, sans-serif; line-height: 1.5;
     }
-    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 64px; }
-    h1 { font-size: 1.6rem; margin: 0 0 4px; }
-    .sub { color: var(--muted); margin: 0 0 28px; }
+    a { color: var(--fiap); }
+
+    /* Cabeçalho no padrão do portal (Pós Tech / Fase) */
+    .fiap-header { background: var(--text); color: #fff; padding: 20px 0; }
+    .fiap-header .wrap { display: flex; align-items: center; gap: 16px; }
+    .fiap-logo {
+      font-weight: 800; font-size: 1.5rem; letter-spacing: .5px;
+      background: var(--fiap); color: #fff; padding: 6px 12px; border-radius: 6px;
+    }
+    .conteudo-digital-disciplina-unidade {
+      margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .12em;
+      color: #cbd0d6; font-weight: 600;
+    }
+    .conteudo-digital-disciplina-title { margin: 2px 0 0; font-size: 1.35rem; font-weight: 700; }
+
+    .wrap { max-width: 920px; margin: 0 auto; padding: 0 20px; }
+    main.wrap { padding-top: 28px; padding-bottom: 64px; }
+
     .banner {
-      background: rgba(56,189,248,.1); border: 1px solid var(--accent);
-      border-radius: 12px; padding: 14px 18px; margin-bottom: 28px; font-size: .95rem;
+      background: var(--fiap-soft); border: 1px solid var(--fiap);
+      border-radius: 10px; padding: 14px 18px; margin-bottom: 26px; font-size: .95rem;
+      color: var(--fiap-dark);
     }
-    .banner b { color: var(--accent); }
-    h2 { font-size: 1.05rem; margin: 28px 0 12px; color: var(--muted);
-         text-transform: uppercase; letter-spacing: .05em; }
-    .models { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 14px; }
+    .banner b { color: var(--fiap-dark); }
+
+    h2.section {
+      font-size: .95rem; margin: 26px 0 12px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em; font-weight: 700;
+    }
+
+    /* Cards de escolha do ticker */
+    .models { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 14px; }
     .model {
       background: var(--card); border: 2px solid var(--border); border-radius: 12px;
-      padding: 16px; cursor: pointer; transition: border-color .15s, transform .1s;
+      padding: 16px; cursor: pointer; transition: border-color .15s, transform .1s, box-shadow .15s;
     }
-    .model:hover { transform: translateY(-2px); }
-    .model.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-    .model .tk { font-size: 1.3rem; font-weight: 700; }
-    .model .metric { color: var(--muted); font-size: .85rem; margin-top: 6px; }
-    .model .metric span { color: var(--text); }
-    .panel { background: var(--card); border: 1px solid var(--border);
-             border-radius: 12px; padding: 20px; margin-top: 16px; }
-    label { display: block; font-size: .85rem; color: var(--muted); margin: 12px 0 4px; }
+    .model:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+    .model.selected { border-color: var(--fiap); box-shadow: 0 0 0 3px var(--fiap-soft); }
+    .model .tk { font-size: 1.3rem; font-weight: 800; color: var(--text); }
+    .model .metric { color: var(--muted); font-size: .84rem; margin-top: 6px; }
+    .model .metric b { color: var(--text); font-weight: 700; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 22px; margin-top: 16px;
+    }
+
+    /* Avaliação do modelo selecionado */
+    .eval-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 14px; }
+    .eval-head h3 { margin: 0; font-size: 1.15rem; }
+    .eval-head .badge {
+      background: var(--fiap); color: #fff; font-weight: 800; font-size: .85rem;
+      padding: 2px 10px; border-radius: 20px;
+    }
+    .tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    .tile { background: var(--bg); border-radius: 10px; padding: 14px; text-align: center; }
+    .tile .label { display: block; font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .tile .val { display: block; font-size: 1.6rem; font-weight: 800; color: var(--text); margin-top: 4px; }
+    .tile .hint { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }
+    .eval-meta { margin: 12px 0 0; font-size: .82rem; color: var(--muted); }
+
+    label { display: block; font-size: .85rem; color: var(--muted); margin: 14px 0 4px; font-weight: 600; }
     input, textarea, select {
-      width: 100%; background: var(--bg); color: var(--text);
+      width: 100%; background: #fff; color: var(--text);
       border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-size: .95rem;
     }
-    textarea { min-height: 70px; font-family: ui-monospace, monospace; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; }
-    .row > div { flex: 1; min-width: 120px; }
+    textarea { min-height: 68px; font-family: ui-monospace, monospace; }
     button {
-      margin-top: 16px; background: var(--accent); color: #04283a; border: none;
-      border-radius: 8px; padding: 11px 18px; font-weight: 700; font-size: .95rem;
-      cursor: pointer; margin-right: 10px;
+      margin-top: 14px; background: var(--fiap); color: #fff; border: none;
+      border-radius: 8px; padding: 11px 20px; font-weight: 700; font-size: .95rem;
+      cursor: pointer; margin-right: 10px; transition: background .15s;
     }
-    button.alt { background: var(--accent2); color: #052e16; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    .chosen { color: var(--accent); font-weight: 700; }
-    pre {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 14px; overflow-x: auto; margin-top: 16px; font-size: .85rem;
-    }
-    .err { color: var(--danger); }
-    a { color: var(--accent); }
-    #chartWrap svg { width: 100%; height: auto; background: var(--bg);
+    button:hover { background: var(--fiap-dark); }
+    button.alt { background: var(--hist); }
+    button.alt:hover { background: #1f5c95; }
+    .chosen { color: var(--fiap); font-weight: 800; }
+
+    #chartWrap svg { width: 100%; height: auto; background: #fff;
                      border: 1px solid var(--border); border-radius: 8px; }
     .legend { display: flex; gap: 20px; margin-top: 10px; font-size: .85rem; color: var(--muted); }
     .legend .item { display: flex; align-items: center; gap: 6px; }
     .legend .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
-    footer { margin-top: 40px; color: var(--muted); font-size: .85rem; }
+
+    pre {
+      background: #0f172a; color: #e2e8f0; border-radius: 8px;
+      padding: 14px; overflow-x: auto; margin-top: 16px; font-size: .82rem;
+    }
+    .err { color: #b91c1c; }
+    footer { margin-top: 40px; color: var(--muted); font-size: .85rem;
+             border-top: 1px solid var(--border); padding-top: 16px; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>📈 Previsão de Ações · LSTM</h1>
-    <p class="sub">Tech Challenge — Fase 4 · Pós Tech MLET</p>
+  <header class="fiap-header">
+    <div class="wrap">
+      <span class="fiap-logo">FIAP</span>
+      <div>
+        <h1 class="conteudo-digital-disciplina-unidade">Pós Tech</h1>
+        <div class="conteudo-digital-disciplina-title">Fase 4 - Deep Learning e IA · Previsão de Ações (LSTM)</div>
+      </div>
+    </div>
+  </header>
 
+  <main class="wrap">
     <div class="banner">
       Esta API foi treinada com <b id="count">3</b> modelos independentes —
-      <b>um por ticker</b>. <b>Escolha um ticker abaixo</b> antes de fazer a
-      previsão. Cada modelo tem suas próprias métricas de avaliação.
+      <b>um por ação (ticker)</b>. <b>Selecione uma ação</b> para ver a
+      <b>avaliação do modelo</b> e, em seguida, gerar a previsão.
     </div>
 
-    <h2>1 · Escolha o modelo (ticker)</h2>
+    <h2 class="section">1 · Selecione a ação (modelo)</h2>
     <div class="models" id="models">Carregando modelos…</div>
 
-    <div class="panel" id="panel" style="display:none">
-      <h2 style="margin-top:0">2 · Prever <span class="chosen" id="chosenTk"></span></h2>
+    <div class="card" id="evalPanel" style="display:none">
+      <div class="eval-head">
+        <h3>Avaliação do modelo</h3>
+        <span class="badge" id="evalTicker"></span>
+      </div>
+      <div class="tiles">
+        <div class="tile"><span class="label">MAE</span><span class="val" id="mMae">—</span><span class="hint">erro absoluto médio (US$)</span></div>
+        <div class="tile"><span class="label">RMSE</span><span class="val" id="mRmse">—</span><span class="hint">raiz do erro quadrático (US$)</span></div>
+        <div class="tile"><span class="label">MAPE</span><span class="val" id="mMape">—</span><span class="hint">erro percentual médio</span></div>
+      </div>
+      <p class="eval-meta" id="evalMeta"></p>
+    </div>
+
+    <div class="card" id="panel" style="display:none">
+      <div class="eval-head" style="margin-bottom:6px">
+        <h3 style="margin:0">2 · Prever</h3><span class="chosen" id="chosenTk"></span>
+      </div>
 
       <label>Horizonte (dias à frente)</label>
       <input type="number" id="horizon" value="5" min="1" max="30" />
 
-      <div style="margin-top:20px">
+      <div style="margin-top:18px">
         <b>Opção A — dados atuais (POST /predict/latest)</b>
-        <p class="sub" style="margin:4px 0">A API baixa o histórico recente do ticker automaticamente.</p>
+        <p style="margin:4px 0; color:var(--muted); font-size:.9rem">A API baixa o histórico recente da ação automaticamente.</p>
         <button class="alt" id="btnLatest">Prever com dados atuais</button>
       </div>
 
-      <div style="margin-top:24px">
+      <div style="margin-top:22px">
         <b>Opção B — seus próprios preços (POST /predict)</b>
         <label>Preços de fechamento (separados por vírgula, em ordem cronológica)</label>
         <textarea id="prices" placeholder="100.1, 101.3, 99.8, 102.5, ..."></textarea>
@@ -101,11 +166,11 @@
       </div>
 
       <div id="chartWrap" style="display:none; margin-top:24px">
-        <h2 style="margin:0 0 8px">Gráfico — histórico e previsão</h2>
+        <h2 class="section" style="margin-top:0">Gráfico — histórico e previsão</h2>
         <div id="chart"></div>
         <div class="legend">
-          <span class="item"><span class="swatch" style="background:var(--hist)"></span> Histórico de preços</span>
-          <span class="item"><span class="swatch" style="background:var(--pred)"></span> Valores previstos</span>
+          <span class="item"><span class="swatch" style="background:var(--hist)"></span> Histórico de preços (real)</span>
+          <span class="item"><span class="swatch" style="background:var(--pred)"></span> Valores previstos (LSTM)</span>
         </div>
       </div>
 
@@ -113,14 +178,15 @@
     </div>
 
     <footer>
-      Documentação interativa (Swagger): <a href="/docs">/docs</a> ·
+      Documentação (Swagger): <a href="/docs">/docs</a> ·
       Catálogo de modelos: <a href="/models">/models</a> ·
       Métricas: <a href="/metrics">/metrics</a>
     </footer>
-  </div>
+  </main>
 
   <script>
     let selected = null;
+    const catalog = {};   // symbol -> item do /models
 
     async function loadModels() {
       const box = document.getElementById('models');
@@ -131,14 +197,15 @@
         document.getElementById('count').textContent = data.count;
         box.innerHTML = '';
         data.models.forEach(m => {
+          catalog[m.symbol] = m;
           const el = document.createElement('div');
           el.className = 'model';
           el.dataset.symbol = m.symbol;
           const mae = m.metrics.mae ?? '—', rmse = m.metrics.rmse ?? '—', mape = m.metrics.mape ?? '—';
           el.innerHTML = `<div class="tk">${m.symbol}</div>
-            <div class="metric">MAE <span>${mae}</span></div>
-            <div class="metric">RMSE <span>${rmse}</span></div>
-            <div class="metric">MAPE <span>${mape}%</span></div>`;
+            <div class="metric">MAE <b>${mae}</b></div>
+            <div class="metric">RMSE <b>${rmse}</b></div>
+            <div class="metric">MAPE <b>${mape}%</b></div>`;
           el.onclick = () => choose(m.symbol, el);
           box.appendChild(el);
         });
@@ -151,15 +218,27 @@
       selected = symbol;
       document.querySelectorAll('.model').forEach(m => m.classList.remove('selected'));
       el.classList.add('selected');
+      showEval(symbol);
       document.getElementById('chosenTk').textContent = symbol;
       document.getElementById('panel').style.display = 'block';
+      clearChart();
+      document.getElementById('out').style.display = 'none';
     }
 
-    function showOut(obj, isError) {
-      const out = document.getElementById('out');
-      out.style.display = 'block';
-      out.className = isError ? 'err' : '';
-      out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    // Exibe a avaliação do modelo escolhido (antes de prever)
+    function showEval(symbol) {
+      const m = catalog[symbol];
+      if (!m) return;
+      document.getElementById('evalTicker').textContent = symbol;
+      document.getElementById('mMae').textContent = m.metrics.mae ?? '—';
+      document.getElementById('mRmse').textContent = m.metrics.rmse ?? '—';
+      document.getElementById('mMape').textContent = (m.metrics.mape ?? '—') + '%';
+      const p = m.period || {};
+      const treino = m.trained_at ? new Date(m.trained_at).toLocaleDateString('pt-BR') : '—';
+      document.getElementById('evalMeta').textContent =
+        `Treinado com histórico de ${p.start ?? '?'} a ${p.end ?? '?'} · janela de ${m.sequence_length} dias · treinado em ${treino}. ` +
+        `Métricas medidas no conjunto de teste, em escala real de preço.`;
+      document.getElementById('evalPanel').style.display = 'block';
     }
 
     function clearChart() {
@@ -167,10 +246,9 @@
       document.getElementById('chart').innerHTML = '';
     }
 
-    // Desenha um gráfico de linha em SVG: histórico (azul) + previsão (laranja),
-    // com a linha prevista continuando a partir do último ponto real.
+    // Gráfico de linha (SVG): histórico (azul) + previsão (magenta), conectados.
     function renderChart(resp) {
-      const MAXH = 90;                              // limita o histórico exibido
+      const MAXH = 90;
       const hist = (resp.history || []).slice(-MAXH);
       const preds = resp.predictions || [];
       if (hist.length < 2 || preds.length < 1) { clearChart(); return; }
@@ -183,28 +261,25 @@
       let ymin = Math.min(...all), ymax = Math.max(...all);
       const ypad = (ymax - ymin) * 0.08 || 1;
       ymin -= ypad; ymax += ypad;
-      const nTotal = hist.length + preds.length;    // pontos no eixo X
+      const nTotal = hist.length + preds.length;
       const xFor = i => padL + i * (W - padL - padR) / (nTotal - 1);
       const yFor = v => padT + (ymax - v) * (H - padT - padB) / (ymax - ymin);
 
-      const startIdx = hist.length - 1;             // índice do último real
+      const startIdx = hist.length - 1;
       const histPts = hist.map((v, i) => `${xFor(i).toFixed(1)},${yFor(v).toFixed(1)}`).join(' ');
-      // começa no último ponto real -> as linhas ficam conectadas
       const predSeq = [hist[hist.length - 1], ...preds];
       const predPts = predSeq.map((v, k) => `${xFor(startIdx + k).toFixed(1)},${yFor(v).toFixed(1)}`).join(' ');
       const bx = xFor(startIdx);
 
       const fmt = v => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
-      // grade horizontal + rótulos do eixo Y
       let grid = '';
       for (let t = 0; t <= 4; t++) {
         const v = ymax - (ymax - ymin) * t / 4, y = yFor(v);
-        grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#334155" stroke-width="1"/>`;
-        grid += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" fill="#94a3b8" font-size="11" text-anchor="end">${fmt(v)}</text>`;
+        grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#e2e5e9" stroke-width="1"/>`;
+        grid += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" fill="#6b7280" font-size="11" text-anchor="end">${fmt(v)}</text>`;
       }
-      // rótulos do eixo X (início, divisa, fim)
       const xlabel = (x, txt, anchor) =>
-        `<text x="${x.toFixed(1)}" y="${H - padB + 22}" fill="#94a3b8" font-size="11" text-anchor="${anchor}">${txt}</text>`;
+        `<text x="${x.toFixed(1)}" y="${H - padB + 22}" fill="#6b7280" font-size="11" text-anchor="${anchor}">${txt}</text>`;
       const startLbl = histDates ? histDates[0] : `−${hist.length}d`;
       const bLbl = histDates ? histDates[histDates.length - 1] : 'último';
       const endLbl = predDates ? predDates[predDates.length - 1] : `+${preds.length}d`;
@@ -213,7 +288,7 @@
       const svg = `
         <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Gráfico de histórico e previsão">
           ${grid}
-          <line x1="${bx.toFixed(1)}" y1="${padT}" x2="${bx.toFixed(1)}" y2="${H - padB}" stroke="#64748b" stroke-width="1" stroke-dasharray="4 4"/>
+          <line x1="${bx.toFixed(1)}" y1="${padT}" x2="${bx.toFixed(1)}" y2="${H - padB}" stroke="#9aa0a6" stroke-width="1" stroke-dasharray="4 4"/>
           <polyline fill="none" stroke="var(--hist)" stroke-width="2" points="${histPts}"/>
           <polyline fill="none" stroke="var(--pred)" stroke-width="2.5" stroke-dasharray="6 4" points="${predPts}"/>
           <circle cx="${bx.toFixed(1)}" cy="${yFor(hist[hist.length - 1]).toFixed(1)}" r="3.5" fill="var(--hist)"/>
@@ -227,8 +302,15 @@
       document.getElementById('chartWrap').style.display = 'block';
     }
 
+    function showOut(obj, isError) {
+      const out = document.getElementById('out');
+      out.style.display = 'block';
+      out.className = isError ? 'err' : '';
+      out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    }
+
     async function callApi(url, body) {
-      if (!selected) { showOut('Escolha um ticker primeiro.', true); return; }
+      if (!selected) { showOut('Selecione uma ação primeiro.', true); return; }
       showOut('Prevendo…', false);
       clearChart();
       try {
@@ -246,7 +328,6 @@
       const horizon = +document.getElementById('horizon').value || 1;
       callApi('/predict/latest', { symbol: selected, horizon });
     };
-
     document.getElementById('btnPredict').onclick = () => {
       const horizon = +document.getElementById('horizon').value || 1;
       const prices = document.getElementById('prices').value
