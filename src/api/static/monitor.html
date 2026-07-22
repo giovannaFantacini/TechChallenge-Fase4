@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FIAP Pós Tech · Monitoramento da API</title>
+  <style>
+    :root {
+      --fiap: #ED145B; --fiap-dark: #C10E49; --fiap-soft: #fde7ee;
+      --bg: #f4f5f7; --card: #ffffff; --text: #25282b; --muted: #6b7280;
+      --border: #e2e5e9; --ok: #1d9e75; --warn: #d97706; --err: #b91c1c;
+      --hist: #2a6fb0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Helvetica Neue", Arial, system-ui, sans-serif; line-height: 1.5;
+    }
+    a { color: var(--fiap); }
+    .fiap-header { background: var(--text); color: #fff; padding: 20px 0; }
+    .fiap-header .wrap { display: flex; align-items: center; gap: 16px; }
+    .fiap-logo {
+      font-weight: 800; font-size: 1.5rem; letter-spacing: .5px;
+      background: var(--fiap); color: #fff; padding: 6px 12px; border-radius: 6px;
+    }
+    .conteudo-digital-disciplina-unidade {
+      margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .12em;
+      color: #cbd0d6; font-weight: 600;
+    }
+    .conteudo-digital-disciplina-title { margin: 2px 0 0; font-size: 1.35rem; font-weight: 700; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+    main.wrap { padding-top: 26px; padding-bottom: 64px; }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      margin-bottom: 20px; font-size: .9rem; color: var(--muted);
+    }
+    .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; color: var(--ok); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok);
+           animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+    button {
+      background: var(--fiap); color: #fff; border: none; border-radius: 8px;
+      padding: 8px 16px; font-weight: 700; font-size: .88rem; cursor: pointer;
+    }
+    button:hover { background: var(--fiap-dark); }
+    button.ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
+
+    h2.section {
+      font-size: .95rem; margin: 28px 0 12px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em; font-weight: 700;
+    }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 14px; }
+    .tile {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px; text-align: center;
+    }
+    .tile .label { display: block; font-size: .76rem; color: var(--muted);
+                   text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+    .tile .val { display: block; font-size: 1.75rem; font-weight: 800; margin-top: 6px; }
+    .tile .unit { font-size: .95rem; font-weight: 600; color: var(--muted); }
+
+    .card { background: var(--card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px; margin-top: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: .88rem; }
+    .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .bar-row .tk { width: 64px; font-weight: 800; }
+    .bar-track { flex: 1; background: var(--bg); border-radius: 6px; height: 20px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--fiap); border-radius: 6px; }
+    .bar-row .n { width: 46px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+    .empty { color: var(--muted); font-size: .9rem; }
+    .status-ok { color: var(--ok); font-weight: 700; }
+    .status-bad { color: var(--err); font-weight: 700; }
+    footer { margin-top: 40px; color: var(--muted); font-size: .85rem;
+             border-top: 1px solid var(--border); padding-top: 16px; }
+  </style>
+</head>
+<body>
+  <header class="fiap-header">
+    <div class="wrap">
+      <span class="fiap-logo">FIAP</span>
+      <div>
+        <h1 class="conteudo-digital-disciplina-unidade">Pós Tech · Fase 4</h1>
+        <div class="conteudo-digital-disciplina-title">Monitoramento da API em produção</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="toolbar">
+      <span class="live"><span class="dot"></span> AO VIVO</span>
+      <span>Atualizado: <b id="updated">—</b></span>
+      <span>Uptime: <b id="uptime">—</b></span>
+      <button id="btnRefresh">Atualizar agora</button>
+      <button class="ghost" id="btnAuto">Pausar auto-refresh</button>
+    </div>
+
+    <h2 class="section">Visão geral</h2>
+    <div class="tiles">
+      <div class="tile"><span class="label">Requisições</span><span class="val" id="tReq">—</span></div>
+      <div class="tile"><span class="label">Tempo de resposta</span><span class="val" id="tResp">—<span class="unit"> ms</span></span></div>
+      <div class="tile"><span class="label">Previsões</span><span class="val" id="tPred">—</span></div>
+      <div class="tile"><span class="label">Inferência (média)</span><span class="val" id="tInfer">—<span class="unit"> ms</span></span></div>
+      <div class="tile"><span class="label">Memória</span><span class="val" id="tMem">—<span class="unit"> MB</span></span></div>
+      <div class="tile"><span class="label">CPU</span><span class="val" id="tCpu">—<span class="unit"> %</span></span></div>
+    </div>
+
+    <h2 class="section">Requisições por endpoint</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th class="num">Requisições</th>
+            <th class="num">Média (ms)</th>
+            <th class="num">p95 (ms)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="epBody"><tr><td colspan="5" class="empty">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2 class="section">Previsões por ação (ticker)</h2>
+    <div class="card" id="predCard"><p class="empty">Nenhuma previsão ainda — gere uma na <a href="/">página principal</a>.</p></div>
+
+    <h2 class="section">Latência de inferência do modelo</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Métrica</th><th class="num">Valor</th></tr></thead>
+        <tbody>
+          <tr><td>Total de inferências</td><td class="num" id="iCount">—</td></tr>
+          <tr><td>Tempo médio</td><td class="num" id="iAvg">—</td></tr>
+          <tr><td>p95 (95% ficam abaixo de)</td><td class="num" id="iP95">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <footer>
+      Página principal: <a href="/">/</a> ·
+      Métricas cruas (formato Prometheus): <a href="/metrics">/metrics</a> ·
+      JSON deste painel: <a href="/monitor/data">/monitor/data</a> ·
+      Swagger: <a href="/docs">/docs</a>
+    </footer>
+  </main>
+
+  <script>
+    let auto = true, timer = null;
+    const fmt = v => (v === null || v === undefined) ? '—' : v;
+
+    function humanUptime(s) {
+      s = Math.floor(s);
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      return h ? `${h}h ${m}m` : (m ? `${m}m ${sec}s` : `${sec}s`);
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('/monitor/data');
+        const d = await res.json();
+
+        document.getElementById('updated').textContent = new Date().toLocaleTimeString('pt-BR');
+        document.getElementById('uptime').textContent = humanUptime(d.uptime_seconds);
+        document.getElementById('tReq').textContent = d.totals.requests;
+        document.getElementById('tResp').innerHTML = fmt(d.totals.avg_response_ms) + '<span class="unit"> ms</span>';
+        document.getElementById('tPred').textContent = d.totals.predictions;
+        document.getElementById('tInfer').innerHTML = fmt(d.inference.avg_ms) + '<span class="unit"> ms</span>';
+        document.getElementById('tMem').innerHTML = fmt(d.resources.memory_mb) + '<span class="unit"> MB</span>';
+        document.getElementById('tCpu').innerHTML = fmt(d.resources.cpu_percent) + '<span class="unit"> %</span>';
+
+        // Tabela de endpoints
+        const body = document.getElementById('epBody');
+        if (!d.endpoints.length) {
+          body.innerHTML = '<tr><td colspan="5" class="empty">Sem requisições registradas.</td></tr>';
+        } else {
+          body.innerHTML = d.endpoints.map(e => {
+            const st = Object.entries(e.by_status)
+              .map(([c, n]) => `<span class="${c.startsWith('2') ? 'status-ok' : 'status-bad'}">${c}</span>&nbsp;${n}`)
+              .join(' · ');
+            return `<tr>
+              <td><code>${e.endpoint}</code></td>
+              <td class="num">${e.requests}</td>
+              <td class="num">${fmt(e.avg_ms)}</td>
+              <td class="num">${fmt(e.p95_ms)}</td>
+              <td>${st || '—'}</td>
+            </tr>`;
+          }).join('');
+        }
+
+        // Previsões por ticker (barras)
+        const pc = document.getElementById('predCard');
+        const entries = Object.entries(d.predictions_by_symbol);
+        if (!entries.length) {
+          pc.innerHTML = '<p class="empty">Nenhuma previsão ainda — gere uma na <a href="/">página principal</a>.</p>';
+        } else {
+          const max = Math.max(...entries.map(([, n]) => n));
+          pc.innerHTML = entries.map(([sym, n]) => `
+            <div class="bar-row">
+              <span class="tk">${sym}</span>
+              <span class="bar-track"><span class="bar-fill" style="width:${(n / max * 100).toFixed(1)}%"></span></span>
+              <span class="n">${n}</span>
+            </div>`).join('');
+        }
+
+        document.getElementById('iCount').textContent = d.inference.count;
+        document.getElementById('iAvg').textContent = fmt(d.inference.avg_ms) + ' ms';
+        document.getElementById('iP95').textContent = fmt(d.inference.p95_ms) + ' ms';
+      } catch (e) {
+        document.getElementById('updated').textContent = 'falha ao carregar';
+      }
+    }
+
+    document.getElementById('btnRefresh').onclick = load;
+    document.getElementById('btnAuto').onclick = (ev) => {
+      auto = !auto;
+      ev.target.textContent = auto ? 'Pausar auto-refresh' : 'Retomar auto-refresh';
+      document.querySelector('.live').style.opacity = auto ? '1' : '.35';
+      if (auto) timer = setInterval(load, 5000); else clearInterval(timer);
+    };
+
+    load();
+    timer = setInterval(load, 5000);
+  </script>
+</body>
+</html>

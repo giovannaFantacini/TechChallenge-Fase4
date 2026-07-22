@@ -27,6 +27,7 @@ from src.api.monitoring import (
     PREDICTION_COUNT,
     MonitoringMiddleware,
     refresh_resource_metrics,
+    snapshot,
 )
 from src.api.predictor import ModelNotLoadedError, registry
 from src.api.schemas import (
@@ -128,13 +129,14 @@ async def list_models():
 @app.post("/predict", response_model=PredictResponse, tags=["model"])
 async def predict(req: PredictRequest):
     try:
-        with INFERENCE_LATENCY.time():
-            result = registry.predict(req.symbol, req.prices, horizon=req.horizon)
+        result = registry.predict(req.symbol, req.prices, horizon=req.horizon)
     except ModelNotLoadedError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+    # Só registra latência de inferência quando ela de fato aconteceu.
+    INFERENCE_LATENCY.observe(result["inference_ms"] / 1000)
     PREDICTION_COUNT.labels(symbol=result["symbol"]).inc()
     # Devolve o histórico informado (limitado à cauda) para plotagem.
     history = [round(float(p), 4) for p in req.prices[-250:]]
@@ -184,10 +186,11 @@ async def predict_latest(req: PredictLatestRequest):
         )
 
     try:
-        with INFERENCE_LATENCY.time():
-            result = registry.predict(req.symbol, prices, horizon=req.horizon)
+        result = registry.predict(req.symbol, prices, horizon=req.horizon)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+    INFERENCE_LATENCY.observe(result["inference_ms"] / 1000)
 
     # Datas do histórico e projeção das datas futuras (dias úteis) para o gráfico.
     import pandas as pd
@@ -214,6 +217,23 @@ async def predict_latest(req: PredictLatestRequest):
 
 @app.get("/metrics", tags=["infra"])
 async def metrics():
-    """Endpoint scrapeado pelo Prometheus."""
+    """Endpoint scrapeado pelo Prometheus (formato texto)."""
     refresh_resource_metrics()
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/monitor", include_in_schema=False)
+async def monitor_page():
+    """Painel visual de monitoramento (mesma origem da página principal)."""
+    page = STATIC_DIR / "monitor.html"
+    if page.exists():
+        return FileResponse(page)
+    return Response(
+        "<h1>Painel indisponível</h1><p>Veja /metrics</p>", media_type="text/html"
+    )
+
+
+@app.get("/monitor/data", tags=["infra"])
+async def monitor_data():
+    """Métricas agregadas em JSON — alimenta o painel /monitor."""
+    return snapshot()

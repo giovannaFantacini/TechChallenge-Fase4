@@ -177,7 +177,9 @@ pytest
 | `GET`  | `/models` | **Catálogo dos modelos treinados** (para escolher o `symbol`) |
 | `POST` | `/predict` | Previsão a partir de preços informados (**exige `symbol`**) |
 | `POST` | `/predict/latest` | Baixa dados atuais do ticker e prevê (**exige `symbol`**) |
-| `GET`  | `/metrics` | Métricas Prometheus (monitoramento) |
+| `GET`  | `/monitor` | **Painel visual de monitoramento** (auto-refresh) |
+| `GET`  | `/monitor/data` | Métricas agregadas em JSON (alimenta o painel) |
+| `GET`  | `/metrics` | Métricas Prometheus, formato texto (para *scraping*) |
 | `GET`  | `/docs` | Swagger UI |
 
 > ⚠️ Como a API serve **vários modelos**, `/predict` e `/predict/latest`
@@ -284,8 +286,41 @@ O endpoint `/metrics` expõe, no formato Prometheus:
 - `process_cpu_percent` / `process_memory_mb` — **uso de recursos**
 
 Além disso, cada resposta HTTP traz o cabeçalho `X-Process-Time-ms` com o tempo
-de processamento. O `docker-compose.yml` já sobe um **Prometheus** apontando
-para a API (`monitoring/prometheus.yml`), pronto para dashboards e alertas.
+de processamento.
+
+### Painel `/monitor` — monitoramento sem infraestrutura extra
+
+Como `/metrics` devolve **texto cru** (feito para máquina ler), a API também
+serve um **painel visual em `/monitor`**, na mesma origem da página principal —
+sem precisar subir o Prometheus nem outro serviço:
+
+- Cartões: total de requisições, tempo médio de resposta, previsões, latência de
+  inferência, memória e CPU
+- Tabela por endpoint: contagem, **média**, **p95** e quebra por status HTTP
+- Barras de **previsões por ticker**
+- Uptime e **auto-refresh** a cada 5s
+
+`GET /monitor/data` devolve esses mesmos números em JSON — lidos direto do
+registry do Prometheus, com o p95 estimado por interpolação dos buckets do
+histograma.
+
+### Prometheus (opcional, para histórico)
+
+O Prometheus é um **serviço separado**, não um endpoint desta API: ele *scrapeia*
+o `/metrics` periodicamente e guarda a série temporal. O `docker-compose.yml` já
+o sobe apontando para a API (`monitoring/prometheus.yml`):
+
+```bash
+docker compose up --build     # API em :8000 · Prometheus em :9090
+```
+
+> Publicá-lo na internet exigiria um deploy próprio — e ele **não tem
+> autenticação nativa**. Para o ambiente em nuvem, o `/monitor` cobre a
+> visualização sem custo nem exposição adicional.
+
+> ⚠️ **Múltiplos workers:** com `--workers > 1` o `prometheus_client` precisa do
+> *modo multiprocess*; sem isso cada worker contabiliza apenas as próprias
+> métricas. Com 1 worker (padrão do Render) os números ficam consistentes.
 
 **Escalabilidade:** a aplicação é *stateless* (todo o estado vive nos artefatos
 em `models/`), então escala horizontalmente. Para mais throughput, basta rodar
