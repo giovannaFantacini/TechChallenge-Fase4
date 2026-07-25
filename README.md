@@ -366,4 +366,3 @@ arquivo `.env` (veja [`.env.example`](.env.example)). Os principais:
 - ✅ `Dockerfile` + `docker-compose.yml` para conteinerizar a API
 - ✅ API RESTful (FastAPI) servindo os modelos, com escolha de ticker - https://techchallenge-fase4.onrender.com/
 - ✅ Monitoramento (Prometheus) de tempo de resposta e uso de recursos
-- 🎥 Vídeo de demonstração —
